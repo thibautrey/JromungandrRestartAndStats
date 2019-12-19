@@ -1,9 +1,3 @@
-const node_config_path = "~/files/node-config.yaml";
-const node_secret_path = "~/files/node_secret.yaml";
-const genesis_path = "8e4d2a343f3dcf9330ad9035b3e8d168e6728904262f2c434a4f8f934ec7b676";
-const minutesBeforeBlock = 5;
-
-
 const _ = require('lodash');
 const dfns = require('date-fns')
 const request = require('request');
@@ -14,6 +8,9 @@ const {
 var schedule = require('node-schedule');
 var express = require('express')
 var app = express()
+const node_config_path = "~/files/node-config.yaml";
+const node_secret_path = "~/files/node_secret.yaml";
+const genesis_path = "8e4d2a343f3dcf9330ad9035b3e8d168e6728904262f2c434a4f8f934ec7b676";
 
 function setTimeoutAsync(callback, time) {
   setTimeout(function() {
@@ -27,10 +24,22 @@ request('http://127.0.0.1:3000/api/v0/stake_pool/66b93eddb36117aea14fc99ac63e03d
   json: true
 }, (err, res, data_rewards) => {
   if (data_rewards) {
-    console.log(chalk.yellow(`<<Current block>> Stake: ₳${Math.round(data_rewards.total_stake*100/1000000000000)/100}M - Epoch: ${data_rewards.rewards.epoch}`));
-    console.log(chalk.green(`<<Previous block>> Rewards for stakers: ₳${Math.round(data_rewards.rewards.value_for_stakers/1000000)} - Rewards for the pool: ₳${Math.round(data_rewards.rewards.value_taxed/1000000)}`));
+    console.log(chalk.yellow(`<<Current epoch>> Stake: ₳${Math.round(data_rewards.total_stake*100/1000000000000)/100}M - Epoch: ${data_rewards.rewards.epoch}`));
+    console.log(chalk.green(`<<Previous epoch>> Rewards for stakers: ₳${Math.round(data_rewards.rewards.value_for_stakers/1000000)} - Rewards for the pool: ₳${Math.round(data_rewards.rewards.value_taxed/1000000)}`));
     console.log(' ');
-    request('http://127.0.0.1:3000/api/v0/leaders/logs', {
+    
+    const runBabyRun = ()=>{
+      let endCurrentEpoch;
+      request('http://127.0.0.1:3000/api/v0/settings', {
+        json: true
+      }, (err, res, data_settings) => {
+        endCurrentEpoch = dfns.addMinutes(dfns.addHours(new Date(data_settings.block0Time), 24*(parseInt(data_rewards.rewards.epoch)+1)), 15)        
+        setTimeoutAsync(() => {
+        	runBabyRun()
+        }, dfns.differenceInMilliseconds(endCurrentEpoch, Date.now()))
+      });
+    
+    	 request('http://127.0.0.1:3000/api/v0/leaders/logs', {
       json: true
     }, (err, res, data) => {
       if (err) {
@@ -60,7 +69,7 @@ request('http://127.0.0.1:3000/api/v0/stake_pool/66b93eddb36117aea14fc99ac63e03d
 
         data.forEach((row) => {
           if (row.status === "Pending") {
-            const localDate = dfns.subMinutes(new Date(row.scheduled_at_time), minutesBeforeBlock);
+            const localDate = dfns.subMinutes(new Date(row.scheduled_at_time), 5);
             console.log("scheduled for ", localDate);
             setTimeoutAsync(() => {
               exec(`jcli rest v0 shutdown get -h http://127.0.0.1:3000/api; nohup jormungandr --config ${node_config_path} --secret ${node_secret_path} --genesis-block-hash ${genesis_path} >> ~/logs/node.out 2>&1 &`, (error, stdout, stderr) => {
@@ -73,8 +82,9 @@ request('http://127.0.0.1:3000/api/v0/stake_pool/66b93eddb36117aea14fc99ac63e03d
         });
       }
     });
+    }
+    runBabyRun();
   }
 });
 
 app.listen(8000)
-
